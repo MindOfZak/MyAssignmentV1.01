@@ -266,7 +266,7 @@ int main()
 
     glm::mat4 mat = glm::mat4(1.0f);
 
-    // ------------------ Teapot ------------------
+    // Teapot
     std::shared_ptr<Mesh> teapot = std::make_shared<Mesh>();
     teapot->init("models/teapot.obj", blinnShader);
     meshList.push_back(teapot);
@@ -275,21 +275,21 @@ int main()
     meshMatList.push_back(mat);
     teapot->initSpatial(true, mat);
 
-    // ------------------ Bunny ------------------
-    std::shared_ptr<Mesh> bunny = std::make_shared<Mesh>();
+    // Bunny
+    /*std::shared_ptr<Mesh> bunny = std::make_shared<Mesh>();
     bunny->init("models/bunny_normal.obj", texblinnShader);
     meshList.push_back(bunny);
 
     mat = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 1.5f, 0.0f));
     mat = glm::scale(mat, glm::vec3(0.005f, 0.005f, 0.005f));
     meshMatList.push_back(mat);
-    bunny->initSpatial(true, mat);
+    bunny->initSpatial(true, mat);*/
 
-    // ------------------ 4 Mugs ------------------
+    // 4 Mugs
     for (int i = 0; i < 4; i++)
     {
         std::shared_ptr<Mesh> mug = std::make_shared<Mesh>();
-        mug->init("models/Winter_Mug_Low_Poly.obj", blinnShader);
+        mug->init("models/Winter_Mug_Low_Poly.obj", texblinnShader);
         meshList.push_back(mug);
 
         mugIndices.push_back((int)meshList.size() - 1);
@@ -302,11 +302,11 @@ int main()
         mug->initSpatial(true, mugMat);
     }
 
-    // ------------------ Background ------------------
+    // Background 
     glClearColor(0.12f, 0.05f, 0.18f, 1.0f); // dark purple
     glEnable(GL_DEPTH_TEST);
 
-    // ------------------ Render loop ------------------
+    // Render loop 
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();

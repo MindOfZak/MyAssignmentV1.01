@@ -46,108 +46,117 @@ void Mesh::initSpatial(bool useOctree, glm::mat4 mat)
     if (useOctree)
         pSpatial = std::make_unique<Octree>();
     else
-        pSpatial = std::make_unique<Grid>(glm::ivec3(16));
+        pSpatial = std::make_unique<Grid>(glm::ivec3(32));
     
     pSpatial->Build(vertices, indices, mat);
 }
 
-void Mesh::loadModel(std::string path) 
+void Mesh::loadModel(std::string path)
 {
     Assimp::Importer importer;
-    // LabA07 change: aiProcess_FlipUVs
-    const aiScene* scene = importer.ReadFile(path, aiProcess_JoinIdenticalVertices | aiProcess_FlipUVs);
-    if (NULL != scene) {
-        std::cout << "load model successful" << std::endl;
-    } else {
-        std::cout << "load model failed" << std::endl;
-    }
+    const aiScene* scene = importer.ReadFile(
+        path,
+        aiProcess_JoinIdenticalVertices |
+        aiProcess_FlipUVs |
+        aiProcess_Triangulate
+    );
 
-    // LabA07
+    if (scene == NULL || scene->mRootNode == NULL)
+    {
+        std::cout << "load model failed: " << importer.GetErrorString() << std::endl;
+        return;
+    }
+    std::cout << "load model successful" << std::endl;
+
     Vertex v;
 
-    // at the moment we only handle one mesh
-    for (int i = 0; i < scene->mNumMeshes; i++)
+    // ---- Load geometry from ALL sub-meshes safely ----
+    for (unsigned int i = 0; i < scene->mNumMeshes; i++)
     {
         aiMesh* mesh = scene->mMeshes[i];
-        
-        // read vertex position and normals
-        int nVertex = mesh->mNumVertices;
-        // std::cout << mesh->mNumVertices << std::endl;
+        if (!mesh) continue;
 
-        // changed in LabA07
-        for (int j = 0; j < nVertex; j++)
+        unsigned int baseVertex = (unsigned int)vertices.size();
+
+        // vertices
+        for (unsigned int j = 0; j < mesh->mNumVertices; j++)
         {
-            glm::vec3 pos; 
+            glm::vec3 pos;
             pos.x = mesh->mVertices[j].x;
             pos.y = mesh->mVertices[j].y;
-            pos.z = mesh->mVertices[j].z; 
-            // vertices.push_back(pos);
+            pos.z = mesh->mVertices[j].z;
             v.pos = pos;
 
-            glm::vec3 normal;
-            normal.x = mesh->mNormals[j].x;
-            normal.y = mesh->mNormals[j].y;
-            normal.z = mesh->mNormals[j].z;
-            //vertices.push_back(normal);
+            glm::vec3 normal(0.0f, 1.0f, 0.0f);
+            if (mesh->HasNormals())
+            {
+                normal.x = mesh->mNormals[j].x;
+                normal.y = mesh->mNormals[j].y;
+                normal.z = mesh->mNormals[j].z;
+            }
             v.normal = normal;
 
-            // LabA07 Texture Coordinates
-            if(mesh->mTextureCoords[0]) // does the mesh contain texture coordinates?
+            // UVs
+            if (mesh->mTextureCoords[0])
             {
-                glm::vec2 vec;
-                vec.x = mesh->mTextureCoords[0][j].x; 
-                vec.y = mesh->mTextureCoords[0][j].y;
-                v.texCoord = vec;
+                v.texCoord = glm::vec2(
+                    mesh->mTextureCoords[0][j].x,
+                    mesh->mTextureCoords[0][j].y
+                );
             }
-            else {
-                //std::cout << "tex coord zero" << std::endl;
+            else
+            {
                 v.texCoord = glm::vec2(0.0f, 0.0f);
             }
+
             vertices.push_back(v);
         }
 
-		int nFaces = mesh->mNumFaces;
-        for (int j = 0; j < nFaces; j++ )
+        // indices (with baseVertex offset)
+        for (unsigned int j = 0; j < mesh->mNumFaces; j++)
         {
             const aiFace& face = mesh->mFaces[j];
-            for (int k = 0; k < 3; k++)
-            {
-                indices.push_back(face.mIndices[k]); 
-            }
+
+            // safety: only triangles
+            if (face.mNumIndices != 3) continue;
+
+            indices.push_back(baseVertex + face.mIndices[0]);
+            indices.push_back(baseVertex + face.mIndices[1]);
+            indices.push_back(baseVertex + face.mIndices[2]);
         }
     }
 
-    // added in LabA07
-    // loading material and texture, at the moment we only deal with one material/texture
-    aiMesh* mesh = scene->mMeshes[0];
+    // ---- Load diffuse texture from the first material that has one ----
+    std::string dir = "";
+    size_t last_slash_idx = path.find_last_of("/\\");
+    if (last_slash_idx != std::string::npos)
+        dir = path.substr(0, last_slash_idx);
 
-    // Assimp materials are 0-indexed; index 0 is a valid material.
-    if (NULL != mesh && mesh->mMaterialIndex >= 0)
+    for (unsigned int mi = 0; mi < scene->mNumMeshes; mi++)
     {
-        // get directory of the model
-        std::string dir = "";
-        const size_t last_slash_idx = path.rfind('/');
-        if (std::string::npos != last_slash_idx) {
-            dir = path.substr(0, last_slash_idx);
+        aiMesh* m = scene->mMeshes[mi];
+        if (!m) continue;
+
+        if (m->mMaterialIndex >= scene->mNumMaterials) continue;
+
+        aiMaterial* material = scene->mMaterials[m->mMaterialIndex];
+        if (!material) continue;
+
+        if (material->GetTextureCount(aiTextureType_DIFFUSE) > 0)
+        {
+            std::vector<Texture> diffuseMaps =
+                loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", dir);
+
+            textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
+            break;
         }
-
-        aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
-        std::vector<Texture> diffuseMaps = loadMaterialTextures(material,
-            aiTextureType_DIFFUSE, "texture_diffuse", dir);
-        textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
-
-        // this->material = loadMaterial(material);
-
-        // we don't deal with specular maps
-        //std::vector<Texture> specularMaps = loadMaterialTextures(material, 
-        //                                    aiTextureType_SPECULAR, "texture_specular", dir);
-        //textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
     }
 
-    // for debugging
-    std::cout << "numVertex: " <<  vertices.size() << std::endl;
+    std::cout << "numVertex: " << vertices.size() << std::endl;
     std::cout << "numIndex: " << indices.size() << std::endl;
+    std::cout << "numTextures: " << textures.size() << std::endl;
 }
+
 
 void Mesh::initBuffer()
 {
@@ -312,20 +321,21 @@ void Mesh::draw(glm::mat4 matModel, glm::mat4 matView, glm::mat4 matProj)
     // added in LabA07
     // =====================================================
     // Texture mapping (unit 0)
-    GLint textureLoc = glGetUniformLocation(shaderId, "textureMap");
-    if (textureLoc >= 0)
-        glUniform1i(textureLoc, 0);
+    GLint loc = glGetUniformLocation(shaderId, "diffuseMap");
+    if (loc >= 0) glUniform1i(loc, 0);
+
+    loc = glGetUniformLocation(shaderId, "textureMap");
+    if (loc >= 0) glUniform1i(loc, 0);
 
     // Bind the mesh's first diffuse texture (if present)
-    if (!textures.empty())
+    glActiveTexture(GL_TEXTURE0);
+
+    if (!textures.empty() && textures[0].id != 0)
     {
-        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, textures[0].id);
     }
     else
     {
-        // Ensure no stale texture is used by accident
-        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
