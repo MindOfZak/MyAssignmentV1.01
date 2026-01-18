@@ -4,14 +4,16 @@
 // for lighting
 in vec3 fragPos;
 in vec3 normal;
-// added for LabA07
+
 in vec2 texCoord;
 
 uniform vec3 lightPos;
 uniform vec3 viewPos;
 
-// LabA07 diffuse texture map only
+
 uniform sampler2D textureMap;
+
+uniform sampler2D diffuseMap;
 
 // LabA08 
 //uniform sampler2D normalMap;
@@ -24,6 +26,7 @@ out vec4 colour_out;
 void main()
 {
     vec3 colour = texture(textureMap, texCoord).rgb;
+    vec3 albedo = texture(diffuseMap, texCoord).rgb;
 
     if (bPicked)
         colour = 0.6 * colour + 0.4 * vec3(1.0, 1.0, 0.0);
