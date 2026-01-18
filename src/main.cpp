@@ -171,7 +171,7 @@ int main()
         std::cout << "glfw failed" << std::endl;
         return -1;
     }
-
+    
     // create a GLFW window
     window = glfwCreateWindow(800, 800, "Hello OpenGL 11", NULL, NULL);
     glfwMakeContextCurrent(window);
@@ -290,33 +290,17 @@ int main()
     meshMatList.push_back( mat ); // TRS
     bunny->initSpatial(true, mat);
 
+    std::shared_ptr<Mesh> mug = std::make_shared<Mesh>();
+    // Untextured mesh (demonstrates Blinn-Phong lighting without texture)
+    mug->init("models/Winter_Mug_Low_Poly.obj", blinnShader);
+    meshList.push_back(mug);
+    mat = glm::translate(glm::vec3(-2.0f, 1.0f, 0.0f));
+    meshMatList.push_back(mat); // TRS
+    mug->initSpatial(true, mat);
+
     // NOTE: We don't include the floor in meshList, because meshList is used for
     // picking/collision demos. We draw the floor separately.
   
-
-    //----------------------------------------------------
-    // Nodes
-    // std::shared_ptr<Node> scene = std::make_shared<Node>();
-    // std::shared_ptr<Node> teapotNode = std::make_shared<Node>();
-    // std::shared_ptr<Node> cubeNode = std::make_shared<Node>();
-    // std::shared_ptr<Node> bunnyNode = std::make_shared<Node>();
-    
-    //----------------------------------------------------
-    // Build the tree
-    //teapotNode->addMesh(teapot);
-    //cubeNode->addMesh(cube, glm::mat4(1.0), glm::mat4(1.0), glm::scale(glm::vec3(2.0f, 0.25f, 1.5f)));
-    //bunnyNode->addMesh(bunny, glm::mat4(1.0), glm::mat4(1.0), glm::scale(glm::vec3(0.005f, 0.005f, 0.005f)));
-
-
-    // cubeNode->addChild(teapotNode, glm::translate(glm::vec3(-1.5f, 0.5f, 0.0f)));
-    // cubeNode->addChild(bunnyNode, glm::translate(glm::vec3(1.0f, 1.5f, 0.0f)));
-    // cubeNode->addChild(teapotNode, glm::translate(glm::vec3(0.0f, 1.0f, 0.0f)), glm::rotate(glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f)));
-    
-    //----------------------------------------------------
-    // Add the tree to the world space
-    //scene->addChild(cubeNode);
-    //scene->addChild(bunnyNode);
-    // scene->addChild(cubeNode, glm::translate(glm::vec3(1.0f, 0.0f, 0.0f)), glm::rotate(glm::radians(45.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
 
     // setting the background colour, you can change the value
     glClearColor(0.25f, 0.5f, 0.75f, 1.0f);
