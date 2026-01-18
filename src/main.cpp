@@ -17,6 +17,8 @@ static Shader shader;
 
 glm::mat4 matModelRoot = glm::mat4(1.0);
 glm::mat4 matView = glm::mat4(1.0);
+static float gYaw = 0.0f;
+static float gPitch = 0.0f;
 glm::mat4 matProj = glm::ortho(-2.0f,2.0f,-2.0f,2.0f, -2.0f,2.0f);
 
 glm::vec3 lightPos = glm::vec3(5.0f, 5.0f, 10.0f);
@@ -29,7 +31,7 @@ static bool gFloorWireframe = false;
 // Current picked mesh index (for basic object movement)
 static int gPickedIndex = -1;
 
-// We are using mesh list instead of scenegraph to demo our picking and collision detection
+// We are using mesh list instead of scene graph to demo our picking and collision detection
 std::vector< std::shared_ptr <Mesh> > meshList;
 std::vector< glm::mat4 > meshMatList;
 
@@ -160,7 +162,15 @@ void mouse_button_callback(GLFWwindow *win, int button, int action, int mods)
     }
 }
 
+static void ApplyLookRotation(glm::mat4& viewMat, float yawDeg, float pitchDeg)
+{
+    // Rotate view: yaw around world Y, pitch around camera X
+    glm::mat4 yawMat = glm::rotate(glm::mat4(1.0f), glm::radians(yawDeg), glm::vec3(0, 1, 0));
+    glm::mat4 pitchMat = glm::rotate(glm::mat4(1.0f), glm::radians(pitchDeg), glm::vec3(1, 0, 0));
 
+    // Apply rotations to current view matrix (pre-multiply)
+    viewMat = pitchMat * yawMat * viewMat;
+}
 int main()
 {
     GLFWwindow *window;
@@ -211,11 +221,9 @@ int main()
     viewPos = glm::vec3(0.0f, 2.0f, 5.0f);
     matView = glm::lookAt(viewPos, glm::vec3(0, 0, -10), glm::vec3(0, 1, 0)); 
 
-    // set the Y field of view angle to 60 degrees, width/height ratio to 1.0, and a near plane of 3.5, far plane of 6.5
+    // set the Y field of view angle to 90 degrees, width/height ratio to 1.0, and a near plane of 0.5, far plane of 40.0
     // try to play with the FoV
-    //matProj = glm::perspective(glm::radians(60.0f), 1.0f, 2.0f, 8.0f);
-    // setting to a close near plane and a farway far plane to test collision detection
-    matProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.5f, 40.0f);
+    matProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 100.0f);
 
     // Procedural floor grid (triangles)
     // Generates a simple XZ grid made of triangles centred at origin.
@@ -267,24 +275,13 @@ int main()
     glm::mat4 mat = glm::mat4(1.0f);
 
     // Teapot
-    std::shared_ptr<Mesh> teapot = std::make_shared<Mesh>();
+    /*std::shared_ptr<Mesh> teapot = std::make_shared<Mesh>();
     teapot->init("models/teapot.obj", blinnShader);
     meshList.push_back(teapot);
 
     mat = glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 1.0f, 0.0f));
     meshMatList.push_back(mat);
-    teapot->initSpatial(true, mat);
-
-    // Bunny
-    /*std::shared_ptr<Mesh> bunny = std::make_shared<Mesh>();
-    bunny->init("models/bunny_normal.obj", texblinnShader);
-    meshList.push_back(bunny);
-
-    mat = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 1.5f, 0.0f));
-    mat = glm::scale(mat, glm::vec3(0.005f, 0.005f, 0.005f));
-    meshMatList.push_back(mat);
-    bunny->initSpatial(true, mat);*/
-
+    teapot->initSpatial(true, mat);*/
     // 4 Mugs
     for (int i = 0; i < 4; i++)
     {
@@ -302,6 +299,128 @@ int main()
         mug->initSpatial(true, mugMat);
     }
 
+
+    // ---------- Medieval House ---------------------------------------------
+    std::vector<int> wallLRIndices;
+    // how high the 2nd row sits
+    float yStep = 1.0f;
+    // Back walls: 2 rows (bottom + top)
+    for (int row = 0; row < 2; row++)        // 0 = bottom, 1 = top
+    {
+        for (int i = 0; i < 3; i++)          // 3 walls across
+        {
+            std::shared_ptr<Mesh> wallLR = std::make_shared<Mesh>();
+            wallLR->init("models/MedievalHouse/wall-paint.obj", texblinnShader);
+            meshList.push_back(wallLR);
+
+            wallLRIndices.push_back((int)meshList.size() - 1);
+
+            glm::mat4 wallMat = glm::mat4(1.0f);
+
+            float x = -1.0f + i * 1.0f;      // -1, 0, 1
+            float y = 0.0f + row * yStep;    // 0 (bottom), yStep (top)
+            float z = 1.0f;                  // back row
+
+            wallMat = glm::translate(wallMat, glm::vec3(x, y, z));
+            wallMat = glm::scale(wallMat, glm::vec3(1.0f, 1.0f, 1.0f));
+
+            meshMatList.push_back(wallMat);
+            wallLR->initSpatial(true, wallMat);
+        }
+    }
+    // Extra wall in front of the MIDDLE TOP one (above the door)
+    std::shared_ptr<Mesh> wallFrontTopMid = std::make_shared<Mesh>();
+    wallFrontTopMid->init("models/MedievalHouse/wall-paint.obj", texblinnShader);
+    meshList.push_back(wallFrontTopMid);
+
+    glm::mat4 extraMat = glm::mat4(1.0f);
+
+    // middle = x 0.0, top row = yStep, and "front" = z 2.0 (match your door z)
+    extraMat = glm::translate(extraMat, glm::vec3(0.0f, yStep, 2.0f));
+
+    // if it needs flipping like your front pieces, uncomment this rotate:
+    // extraMat = extraMat * glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0,1,0));
+
+    meshMatList.push_back(extraMat);
+    wallFrontTopMid->initSpatial(true, extraMat);
+
+    
+    // window front walls
+    std::vector<int> wallPWindowIndices;
+
+    for (int row = 0; row < 2; row++)          // 0 = bottom, 1 = top
+    {
+        for (int i = 0; i < 2; i++)            // 0 = left, 1 = right
+        {
+            // window walls at front
+            std::shared_ptr<Mesh> wallPWindow = std::make_shared<Mesh>();
+            wallPWindow->init("models/MedievalHouse/wall-paint-window.obj", texblinnShader);
+            meshList.push_back(wallPWindow);
+
+            wallPWindowIndices.push_back((int)meshList.size() - 1);
+
+            glm::mat4 windowMat = glm::mat4(1.0f);
+
+            float x = -1.0f + i * 2.0f;        // left/right: -1, +1
+            float y = 0.0f + row * 1.0f;       // bottom/top: 0, 1 
+            float z = 2.0f;                    // front
+
+            windowMat = glm::translate(windowMat, glm::vec3(x, y, z));
+            windowMat = glm::scale(windowMat, glm::vec3(1.0f, 1.0f, 1.0f));
+            windowMat = windowMat * glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+            meshMatList.push_back(windowMat);
+            wallPWindow->initSpatial(true, windowMat);
+        }
+    }
+    // wall door
+    std::shared_ptr<Mesh> wallPDoor = std::make_shared<Mesh>();
+    wallPDoor->init("models/medievalHouse/wall-paint-door.obj", texblinnShader);
+    meshList.push_back(wallPDoor);
+
+    glm::mat4 doorMat = glm::mat4(1.0f);
+
+    doorMat = glm::translate(doorMat, glm::vec3(0.0f, 0.0f, 2.0f));
+	doorMat = doorMat * glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    
+    meshMatList.push_back(doorMat);
+    wallPDoor->initSpatial(true, doorMat);
+
+	// Roof pieces
+    std::vector<int> roofIndices;
+
+    // TWEAK THESE 3 NUMBERS to fit your building
+    float roofY = 2.0f;          // how high the roof sits (top of building)
+    float roofZFront = 2.0f;     // front row z (match your front walls/door)
+    float roofZBack = 1.0f;     // back row z (match your back walls)
+
+    for (int row = 0; row < 2; row++)          // 0 = back, 1 = front (or vice versa)
+    {
+        for (int i = 0; i < 3; i++)            // 3 across: x = -1, 0, 1
+        {
+            std::shared_ptr<Mesh> roof = std::make_shared<Mesh>();
+            roof->init("models/MedievalHouse/roof.obj", texblinnShader);   // <-- change if your roof file name differs
+            meshList.push_back(roof);
+            roofIndices.push_back((int)meshList.size() - 1);
+
+            float x = -1.0f + i * 1.0f;        // -1, 0, 1
+            float z = (row == 0) ? roofZBack : roofZFront;
+
+            glm::mat4 roofMat = glm::mat4(1.0f);
+            roofMat = glm::translate(roofMat, glm::vec3(x, roofY, z));
+            roofMat = glm::scale(roofMat, glm::vec3(1.0f));
+
+            // If the roof faces the wrong way, uncomment:
+            // roofMat = roofMat * glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0,1,0));
+
+            meshMatList.push_back(roofMat);
+            roof->initSpatial(true, roofMat);
+        }
+    }
+
+
+    // ---------- End Of Medieval House ----------
+    
     // Background 
     glClearColor(0.12f, 0.05f, 0.18f, 1.0f); // dark purple
     glEnable(GL_DEPTH_TEST);
@@ -325,16 +444,16 @@ int main()
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
         glUseProgram(floorShader);
-        GLint floorColLoc = glGetUniformLocation(floorShader, "baseColor");
+        GLint floorColLoc = glGetUniformLocation(floorShader, "baseColour");
         if (floorColLoc >= 0) glUniform3f(floorColLoc, 0.05f, 0.25f, 0.12f); // dark green
 
         floor->draw(matModelRoot, matView, matProj);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-        // -------- Models --------
+        // Models
         // get uniform location once per frame (cheaper)
         glUseProgram(blinnShader);
-        GLint blinnColLoc = glGetUniformLocation(blinnShader, "baseColor");
+        GLint blinnColLoc = glGetUniformLocation(blinnShader, "baseColour");
 
         for (int i = 0; i < (int)meshList.size(); i++)
         {
@@ -383,8 +502,8 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
             return;
         }
 
-        /*
-        // we don't allow objects to move for picking and collision detection
+        
+         //we don't allow objects to move for picking and collision detection
         if (mods & GLFW_MOD_CONTROL) {
             // translation in world space
             if (GLFW_KEY_LEFT == key) {
@@ -400,7 +519,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
             }
             matModelRoot = mat * matModelRoot;
         }
-        */
+        
 
         if (GLFW_KEY_R == key)
         {
@@ -444,23 +563,27 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         if (mods & GLFW_MOD_CONTROL) {
             if (GLFW_KEY_LEFT == key) {
                 // pan left, rotate around Y, CCW
-                mat = glm::rotate(glm::radians(-angleStep), glm::vec3(0.0, 1.0, 0.0));
-                nextMatView = mat * matView;
+                gYaw -= angleStep;
+                nextMatView = matView;
+                ApplyLookRotation(nextMatView, -angleStep, 0.0f);
             }
             else if (GLFW_KEY_RIGHT == key) {
                 // pan right, rotate around Y, CW
-                mat = glm::rotate(glm::radians(angleStep), glm::vec3(0.0, 1.0, 0.0));
-                nextMatView = mat * matView;
+                gYaw -= angleStep;
+                nextMatView = matView;
+                ApplyLookRotation(nextMatView, +angleStep, 0.0f);
             }
             else if (GLFW_KEY_UP == key) {
                 // tilt up, rotate around X, CCW
-                mat = glm::rotate(glm::radians(-angleStep), glm::vec3(1.0, 0.0, 0.0));
-                nextMatView = mat * matView;
+                gYaw -= angleStep;
+                nextMatView = matView;
+                ApplyLookRotation(nextMatView, 0.0f, -angleStep);
             }
             else if (GLFW_KEY_DOWN == key) {
                 // tilt down, rotate around X, CW
-                mat = glm::rotate(glm::radians(angleStep), glm::vec3(1.0, 0.0, 0.0));
-                nextMatView = mat * matView;
+                gYaw -= angleStep;
+                nextMatView = matView;
+                ApplyLookRotation(nextMatView, 0.0f, +angleStep);
             }
             else if ((GLFW_KEY_KP_ADD == key) ||
                 (GLFW_KEY_EQUAL == key) && (mods & GLFW_MOD_SHIFT)) {

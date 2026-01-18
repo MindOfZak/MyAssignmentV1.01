@@ -1,0 +1,6 @@
+# Blender MTL File: 'Winter_Mug.blend'
+# Material Count: 2
+
+newmtl White
+Kd 1 1 1
+map_Kd Winter_Trees_1920_albedo.jpg

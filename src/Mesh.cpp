@@ -18,19 +18,16 @@ Mesh::Mesh()
 {
 
 }
-
 Mesh::~Mesh()
 {
 
 }
-
 void Mesh::init(std::string path, GLuint id)
 {
     shaderId = id;
     loadModel(path);
     initBuffer();
 }
-
 void Mesh::initFromData(const std::vector<Vertex>& verts,
                         const std::vector<unsigned int>& idx,
                         GLuint id)
@@ -40,7 +37,6 @@ void Mesh::initFromData(const std::vector<Vertex>& verts,
     indices = idx;
     initBuffer();
 }
-
 void Mesh::initSpatial(bool useOctree, glm::mat4 mat)
 {
     if (useOctree)
@@ -50,7 +46,6 @@ void Mesh::initSpatial(bool useOctree, glm::mat4 mat)
     
     pSpatial->Build(vertices, indices, mat);
 }
-
 void Mesh::loadModel(std::string path)
 {
     Assimp::Importer importer;
@@ -69,15 +64,12 @@ void Mesh::loadModel(std::string path)
     std::cout << "load model successful" << std::endl;
 
     Vertex v;
-
     // ---- Load geometry from ALL sub-meshes safely ----
     for (unsigned int i = 0; i < scene->mNumMeshes; i++)
     {
         aiMesh* mesh = scene->mMeshes[i];
         if (!mesh) continue;
-
         unsigned int baseVertex = (unsigned int)vertices.size();
-
         // vertices
         for (unsigned int j = 0; j < mesh->mNumVertices; j++)
         {
@@ -95,7 +87,6 @@ void Mesh::loadModel(std::string path)
                 normal.z = mesh->mNormals[j].z;
             }
             v.normal = normal;
-
             // UVs
             if (mesh->mTextureCoords[0])
             {
@@ -116,7 +107,6 @@ void Mesh::loadModel(std::string path)
         for (unsigned int j = 0; j < mesh->mNumFaces; j++)
         {
             const aiFace& face = mesh->mFaces[j];
-
             // safety: only triangles
             if (face.mNumIndices != 3) continue;
 
@@ -125,8 +115,7 @@ void Mesh::loadModel(std::string path)
             indices.push_back(baseVertex + face.mIndices[2]);
         }
     }
-
-    // ---- Load diffuse texture from the first material that has one ----
+    // Load diffuse texture from the first material that has one
     std::string dir = "";
     size_t last_slash_idx = path.find_last_of("/\\");
     if (last_slash_idx != std::string::npos)
@@ -156,8 +145,6 @@ void Mesh::loadModel(std::string path)
     std::cout << "numIndex: " << indices.size() << std::endl;
     std::cout << "numTextures: " << textures.size() << std::endl;
 }
-
-
 void Mesh::initBuffer()
 {
     // create vertex buffer
@@ -173,51 +160,34 @@ void Mesh::initBuffer()
     glBindVertexArray(vao);
     buffers.push_back(vao);
 
-
-    // changed in LabA07 
     // set buffer data to triangle vertex and setting vertex attributes
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), &vertices[0] /*vertices.data()*/, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    //glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 6, 0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
-
     // set normal attributes
     glEnableVertexAttribArray(1);
-    //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 6, (void *) (sizeof(float) * 3));
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *) (sizeof(float) * 3));
-
-    // added in LabA07: Adding texture coord attribute
     // vertex texture coords
     glEnableVertexAttribArray(2);
     // the second parameter: 2 coordinates (tx, ty) per texture coord	
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoord));
-
     // bind index buffer
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, idxBufID);
-
     // set buffer data for triangle index
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
-
     glBindVertexArray(0);
 }
-
 void Mesh::setShaderId(GLuint sid) {
     shaderId = sid;
 }
-
-// added in LabA07
-// =====================================================
 std::vector<Texture> Mesh::loadMaterialTextures(aiMaterial *mat, aiTextureType type, std::string typeName, std::string dir)
 {
     std::vector<Texture> textures;
-
-    // actually, we only support one texture
     int nTex = mat->GetTextureCount(type);
     for(unsigned int i = 0; i < nTex ; i++)
     {
         aiString str;
         mat->GetTexture(type, i, &str);
-
         Texture texture;
         texture.id = loadTextureAndBind(str.C_Str(), dir);
         texture.type = typeName;
@@ -226,22 +196,19 @@ std::vector<Texture> Mesh::loadMaterialTextures(aiMaterial *mat, aiTextureType t
     }
     return textures;
 }  
-
 unsigned int Mesh::loadTextureAndBind(const char* path, const std::string& directory)
 {
     std::string filename = std::string(path);
     filename = directory + '/' + filename;
-
     int width, height, nrComponents;
     unsigned char* data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 0);
     if (! data)
     {
         std::cout << "Texture failed to load at path: " << path << std::endl;
         stbi_image_free(data);
-
+       
         return 0;
     }
-
     unsigned int textureID;
     glGenTextures(1, &textureID);
 
@@ -271,7 +238,6 @@ unsigned int Mesh::loadTextureAndBind(const char* path, const std::string& direc
 
     return textureID;
 }
-
 Material Mesh::loadMaterial(aiMaterial* mat) 
 {
     Material material;
@@ -292,41 +258,27 @@ Material Mesh::loadMaterial(aiMaterial* mat)
 
     return material;
 }
-
-// =====================================================
-
-
-// all drawings come here
 void Mesh::draw(glm::mat4 matModel, glm::mat4 matView, glm::mat4 matProj)
 {
     // 1. Bind the correct shader program
-    glUseProgram(shaderId);
-
-    //std::cout << "shader: " << shaderId << std::endl;
+    glUseProgram(shaderId);    
 
     // 2. Set the appropriate uniforms for each shader
     // set the modelling transform  
     GLuint model_loc = glGetUniformLocation(shaderId, "model" );
     glUniformMatrix4fv(model_loc, 1, GL_FALSE, &matModel[0][0]);
-
     // set view matrix
     GLuint view_loc = glGetUniformLocation(shaderId, "view" );
     glUniformMatrix4fv(view_loc, 1, GL_FALSE, &matView[0][0]);
-
     // set projection transforms
     glm::mat4 mat_projection = matProj;
     GLuint projection_loc = glGetUniformLocation( shaderId, "projection" );
     glUniformMatrix4fv(projection_loc, 1, GL_FALSE, &mat_projection[0][0]);
-
-    // added in LabA07
-    // =====================================================
     // Texture mapping (unit 0)
     GLint loc = glGetUniformLocation(shaderId, "diffuseMap");
     if (loc >= 0) glUniform1i(loc, 0);
-
     loc = glGetUniformLocation(shaderId, "textureMap");
     if (loc >= 0) glUniform1i(loc, 0);
-
     // Bind the mesh's first diffuse texture (if present)
     glActiveTexture(GL_TEXTURE0);
 
@@ -338,17 +290,12 @@ void Mesh::draw(glm::mat4 matModel, glm::mat4 matView, glm::mat4 matProj)
     {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
-
-    // =====================================================
-    // LabA 11 Spatial Data Structures
+    // Spatial Data Structures
     glUniform1i(glGetUniformLocation(shaderId, "bPicked"), bPicked);
-
     // 3. Bind the corresponding model's VAO
     glBindVertexArray(buffers[0]);
-
     // 4. Draw the model
     glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
-
     // 5. Unset vertex buffer
     glBindVertexArray(0);
 }
