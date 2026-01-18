@@ -173,7 +173,7 @@ int main()
     }
     
     // create a GLFW window
-    window = glfwCreateWindow(800, 800, "Hello OpenGL 11", NULL, NULL);
+    window = glfwCreateWindow(1920, 1080, "My Main Assignment", NULL, NULL);
     glfwMakeContextCurrent(window);
 
     // register the key event callback function
@@ -215,15 +215,14 @@ int main()
     // try to play with the FoV
     //matProj = glm::perspective(glm::radians(60.0f), 1.0f, 2.0f, 8.0f);
     // setting to a close near plane and a farway far plane to test collision detection
-    matProj = glm::perspective(glm::radians(60.0f), 1.0f, 0.5f, 20.0f);
+    matProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.5f, 40.0f);
 
-    //----------------------------------------------------
     // Procedural floor grid (triangles)
     // Generates a simple XZ grid made of triangles centred at origin.
     std::shared_ptr<Mesh> floor = std::make_shared<Mesh>();
     {
-        const int N = 40;            // number of squares per side
-        const float size = 20.0f;    // world size
+        const int N = 40;
+        const float size = 20.0f;
         const float half = size * 0.5f;
         const float step = size / (float)N;
 
@@ -232,7 +231,6 @@ int main()
         v.reserve((N + 1) * (N + 1));
         idx.reserve(N * N * 6);
 
-        // vertices
         for (int z = 0; z <= N; z++)
         {
             for (int x = 0; x <= N; x++)
@@ -240,13 +238,11 @@ int main()
                 Vertex vert;
                 vert.pos = glm::vec3(-half + x * step, 0.0f, -half + z * step);
                 vert.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-                // tile UVs so a texture could be used later (optional)
                 vert.texCoord = glm::vec2((float)x / (float)N, (float)z / (float)N);
                 v.push_back(vert);
             }
         }
 
-        // indices (two triangles per cell)
         auto vid = [N](int x, int z) { return (unsigned int)(z * (N + 1) + x); };
         for (int z = 0; z < N; z++)
         {
@@ -257,90 +253,106 @@ int main()
                 unsigned int i2 = vid(x, z + 1);
                 unsigned int i3 = vid(x + 1, z + 1);
 
-                idx.push_back(i0);
-                idx.push_back(i2);
-                idx.push_back(i1);
-
-                idx.push_back(i1);
-                idx.push_back(i2);
-                idx.push_back(i3);
+                idx.push_back(i0); idx.push_back(i2); idx.push_back(i1);
+                idx.push_back(i1); idx.push_back(i2); idx.push_back(i3);
             }
         }
 
-        // Use dedicated lit floor shader (grey)
         floor->initFromData(v, idx, floorShader);
     }
 
-    glm::mat4 mat = glm::mat4(1.0);
+    // store indices of mugs so we can colour them differently
+    std::vector<int> mugIndices;
 
-    
+    glm::mat4 mat = glm::mat4(1.0f);
+
+    // ------------------ Teapot ------------------
     std::shared_ptr<Mesh> teapot = std::make_shared<Mesh>();
-    // Untextured mesh (demonstrates Blinn-Phong lighting without texture)
     teapot->init("models/teapot.obj", blinnShader);
     meshList.push_back(teapot);
-    mat = glm::translate(glm::vec3(-2.0f, 1.0f, 0.0f));
-    meshMatList.push_back(mat); // TRS
+
+    mat = glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 1.0f, 0.0f));
+    meshMatList.push_back(mat);
     teapot->initSpatial(true, mat);
-    
+
+    // ------------------ Bunny ------------------
     std::shared_ptr<Mesh> bunny = std::make_shared<Mesh>();
     bunny->init("models/bunny_normal.obj", texblinnShader);
     meshList.push_back(bunny);
-    mat = glm::translate(glm::vec3(1.5f, 1.5f, 0.0f)) *
-          glm::scale(glm::vec3(0.005f, 0.005f, 0.005f));
-    meshMatList.push_back( mat ); // TRS
+
+    mat = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 1.5f, 0.0f));
+    mat = glm::scale(mat, glm::vec3(0.005f, 0.005f, 0.005f));
+    meshMatList.push_back(mat);
     bunny->initSpatial(true, mat);
 
-    std::shared_ptr<Mesh> mug = std::make_shared<Mesh>();
-    // Untextured mesh (demonstrates Blinn-Phong lighting without texture)
-    mug->init("models/Winter_Mug_Low_Poly.obj", blinnShader);
-    meshList.push_back(mug);
-    mat = glm::translate(glm::vec3(-2.0f, 1.0f, 0.0f));
-    meshMatList.push_back(mat); // TRS
-    mug->initSpatial(true, mat);
+    // ------------------ 4 Mugs ------------------
+    for (int i = 0; i < 4; i++)
+    {
+        std::shared_ptr<Mesh> mug = std::make_shared<Mesh>();
+        mug->init("models/Winter_Mug_Low_Poly.obj", blinnShader);
+        meshList.push_back(mug);
 
-    // NOTE: We don't include the floor in meshList, because meshList is used for
-    // picking/collision demos. We draw the floor separately.
-  
+        mugIndices.push_back((int)meshList.size() - 1);
 
-    // setting the background colour, you can change the value
-    glClearColor(0.25f, 0.5f, 0.75f, 1.0f);
-    
+        glm::mat4 mugMat = glm::mat4(1.0f);
+        mugMat = glm::translate(mugMat, glm::vec3(1.0f + i * 2.5f, 1.0f, 0.0f)); // spacing
+        mugMat = glm::scale(mugMat, glm::vec3(10.0f));
+        meshMatList.push_back(mugMat);
+
+        mug->initSpatial(true, mugMat);
+    }
+
+    // ------------------ Background ------------------
+    glClearColor(0.12f, 0.05f, 0.18f, 1.0f); // dark purple
     glEnable(GL_DEPTH_TEST);
-    //glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 
-    // setting the event loop
+    // ------------------ Render loop ------------------
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Keep lighting correct when the camera moves
         setViewPositionForProgram(phongShader, viewPos);
         setViewPositionForProgram(blinnShader, viewPos);
         setViewPositionForProgram(texblinnShader, viewPos);
         setViewPositionForProgram(floorShader, viewPos);
 
-        //scene->draw(matModelRoot, matView, matProj);
-        // bunny->draw(glm::scale(glm::vec3(0.005f, 0.005f, 0.005f)), matView, matProj);
-
-
-        // Draw floor (filled or grid mode)
+        // -------- Floor (wireframe toggle) --------
         if (gFloorWireframe)
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         else
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-        // Optional: set floor base colour
         glUseProgram(floorShader);
-        GLint colLoc = glGetUniformLocation(floorShader, "baseColor");
-        if (colLoc >= 0) glUniform3f(colLoc, 0.6f, 0.6f, 0.6f);
+        GLint floorColLoc = glGetUniformLocation(floorShader, "baseColor");
+        if (floorColLoc >= 0) glUniform3f(floorColLoc, 0.05f, 0.25f, 0.12f); // dark green
 
         floor->draw(matModelRoot, matView, matProj);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-        // Draw models
-        for (int i = 0; i < (int)meshList.size(); i++ ) {
+        // -------- Models --------
+        // get uniform location once per frame (cheaper)
+        glUseProgram(blinnShader);
+        GLint blinnColLoc = glGetUniformLocation(blinnShader, "baseColor");
+
+        for (int i = 0; i < (int)meshList.size(); i++)
+        {
+            glUseProgram(blinnShader);
+            
+            bool isMug = std::find(mugIndices.begin(), mugIndices.end(), i) != mugIndices.end();
+
+            if (blinnColLoc >= 0)
+            {
+                if (isMug)
+                    glUniform3f(blinnColLoc, 0.08f, 0.12f, 0.35f); // dark blue
+                else
+                    glUniform3f(blinnColLoc, 0.08f, 0.12f, 0.35f);    // default (teapot)
+            }
+
+            meshList[i]->draw(matModelRoot * meshMatList[i], matView, matProj);
+        
+
             std::shared_ptr<Mesh> pMesh = meshList[i];
             pMesh->draw(matModelRoot * meshMatList[i], matView, matProj);
         }
@@ -349,8 +361,8 @@ int main()
     }
 
     glfwTerminate();
-
     return 0;
+
 }
 
 
