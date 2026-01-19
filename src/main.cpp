@@ -25,6 +25,18 @@ glm::vec3 lightPos = glm::vec3(5.0f, 5.0f, 10.0f);
 glm::vec3 viewPos_default = glm::vec3(0.0f, 2.0f, 6.0f);
 glm::vec3 viewPos = viewPos_default;
 
+// New Camera Movement Implementation 
+glm::vec3 gCamTarget = glm::vec3(0.0f, 0.8f, 0.0f);
+float gCamDistance = 10.0f; // zoom distance
+float gCamYaw = -90.0f;     // left/right rotation
+float gCamPitch = -15.0f;   // up/down rotation
+
+bool gRMBDown = false;
+double gLastMouseX = 0.0, gLastMouseY = 0.0;
+float gMouseSensitivity = 0.15f;
+
+
+
 // Floor render mode: filled (false) or grid/wire (true)
 static bool gFloorWireframe = false;
 
@@ -38,7 +50,6 @@ std::vector< glm::mat4 > meshMatList;
 // GLuint flatShader;
 GLuint blinnShader;
 GLuint phongShader;
-// added for LabA07
 GLuint texblinnShader;
 // simple lit shader for the procedural floor
 GLuint floorShader;
@@ -82,6 +93,36 @@ glm::vec3 screenPosToRay(int mouseX, int mouseY, int w, int h,
 void mouse_button_callback(GLFWwindow *win, int button, int action, int mods);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
+// New Camera Movement Implementation 
+void cursor_position_callback(GLFWwindow* window, double xpos, double ypos);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+
+static void BuildOrbitCamera(const glm::vec3& target, float distance, float yawDeg, float pitchDeg,
+    glm::vec3& outPos, glm::mat4& outView)
+{
+    // clamp the pitch so you can't flip upside down
+    float pitchClamped = glm::clamp(pitchDeg, -89.0f, 89.0f);
+
+    // convert yaw/pitch to a direction
+    float yawRad = glm::radians(gCamYaw);
+    float pitchRad = glm::radians(gCamPitch);
+
+    glm::vec3 dir;
+    dir.x = cosf(pitchRad) * cosf(yawRad);
+    dir.y = sinf(pitchRad);
+    dir.z = cosf(pitchRad) * sinf(yawRad);
+    dir = glm::normalize(dir);
+
+    // camera position is target minus direction * distance
+    outPos = target - dir * distance;
+
+    // rebuild view matrix every frame
+    outView = glm::lookAt(outPos, target, glm::vec3(0, 1, 0));
+}
+static void UpdateOrbitCamera()
+{
+    BuildOrbitCamera(gCamTarget, gCamDistance, gCamYaw, gCamPitch, viewPos, matView);
+}
 
 glm::vec3 screenPosToRay(int mouseX, int mouseY, int w, int h,
                          const glm::mat4 &proj, const glm::mat4 &view)
@@ -106,8 +147,31 @@ glm::vec3 screenPosToRay(int mouseX, int mouseY, int w, int h,
     return ray_world;
 }
 
+glm::vec3 GetCameraWorldPosFromView(const glm::mat4& view)
+{
+    glm::mat4 invView = glm::inverse(view);
+    return glm::vec3(invView[3]); // camera position in world space
+}
+
+
+
+
 void mouse_button_callback(GLFWwindow *win, int button, int action, int mods)
 {
+    
+    if (button == GLFW_MOUSE_BUTTON_RIGHT)
+    {
+        if (action == GLFW_PRESS)
+        {
+            gRMBDown = true;
+            glfwGetCursorPos(win, &gLastMouseX, &gLastMouseY);
+        }
+        else if (action == GLFW_RELEASE)
+        {
+            gRMBDown = false;
+        }
+        return; // stop RMB from also doing picking
+    }
     
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
     {
@@ -116,12 +180,18 @@ void mouse_button_callback(GLFWwindow *win, int button, int action, int mods)
 
         std::cout << "Mouse click at: (" << mx <<", " << my << ")" << std::endl;
 
-        int w, h;
+        /*int w, h;
         glfwGetWindowSize(win, &w, &h);
 
         glm::vec3 rayOrig = viewPos;
-        glm::vec3 rayDir = screenPosToRay((int)mx, (int)my, w, h, matProj, matView);
+        glm::vec3 rayDir = screenPosToRay((int)mx, (int)my, w, h, matProj, matView);*/
 
+        int fbW, fbH;
+        glfwGetFramebufferSize(win, &fbW, &fbH);
+        glm::vec3 rayOrig = GetCameraWorldPosFromView(matView);
+        glm::vec3 rayDir = screenPosToRay((int)mx, (int)my, fbW, fbH, matProj, matView);
+        
+    
         Ray ray{rayOrig, rayDir};
 
         
@@ -162,6 +232,33 @@ void mouse_button_callback(GLFWwindow *win, int button, int action, int mods)
     }
 }
 
+// New Camera Movement Implementation ------------------------------------
+void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
+{
+    if (!gRMBDown)
+    {
+        gLastMouseX = xpos;
+        gLastMouseY = ypos;
+        return;
+    }
+
+    double dx = xpos - gLastMouseX;
+    double dy = ypos - gLastMouseY;
+    gLastMouseX = xpos;
+    gLastMouseY = ypos;
+
+    gCamYaw += (float)dx * gMouseSensitivity;
+    gCamPitch -= (float)dy * gMouseSensitivity; // minus so moving mouse up looks up
+}
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    // scroll up = zoom in
+    gCamDistance -= (float)yoffset * 0.7f;
+    gCamDistance = glm::clamp(gCamDistance, 2.0f, 60.0f);
+}
+// -----------------------------------------------------
+
 static void ApplyLookRotation(glm::mat4& viewMat, float yawDeg, float pitchDeg)
 {
     // Rotate view: yaw around world Y, pitch around camera X
@@ -192,6 +289,14 @@ int main()
     // register the mouse button event callback function
     glfwSetMouseButtonCallback(window, mouse_button_callback);
 
+	// new camera movement callbacks
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+
+	// stop mouse leaving window if i set up a new cursor inside
+
+    // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
     // loading glad
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -218,13 +323,26 @@ int main()
 
     // set the eye at (0, 0, 5), looking at the centre of the world
     // try to change the eye position
-    viewPos = glm::vec3(0.0f, 2.0f, 5.0f);
-    matView = glm::lookAt(viewPos, glm::vec3(0, 0, -10), glm::vec3(0, 1, 0)); 
+   // OLD INITIAL VIEW SETUP
+    /* viewPos = glm::vec3(0.0f, 2.0f, 5.0f);
+    matView = glm::lookAt(viewPos, glm::vec3(0, 0, -10), glm::vec3(0, 1, 0));*/ 
+
+    gCamTarget = glm::vec3(0.0f, 0.8f, 0.0f);
+    gCamDistance = 10.0f;
+    gCamYaw = -90.0f;
+    gCamPitch = -15.0f;
+
+    UpdateOrbitCamera();
 
     // set the Y field of view angle to 90 degrees, width/height ratio to 1.0, and a near plane of 0.5, far plane of 40.0
     // try to play with the FoV
-    matProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 100.0f);
+    //matProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 100.0f);
+    int fbW, fbH;
+    glfwGetFramebufferSize(window, &fbW, &fbH);
+    glViewport(0, 0, fbW, fbH);
 
+    float aspect = (fbH == 0) ? 1.0f : (float)fbW / (float)fbH;
+    matProj = glm::perspective(glm::radians(90.0f), aspect, 0.1f, 100.0f);
     // Procedural floor grid (triangles)
     // Generates a simple XZ grid made of triangles centred at origin.
     std::shared_ptr<Mesh> floor = std::make_shared<Mesh>();
@@ -292,7 +410,7 @@ int main()
         mugIndices.push_back((int)meshList.size() - 1);
 
         glm::mat4 mugMat = glm::mat4(1.0f);
-        mugMat = glm::translate(mugMat, glm::vec3(1.0f + i * 2.5f, 1.0f, 0.0f)); // spacing
+        mugMat = glm::translate(mugMat, glm::vec3(1.0f + i * 2.5f, 0.0f, 0.0f)); // spacing
         mugMat = glm::scale(mugMat, glm::vec3(10.0f));
         meshMatList.push_back(mugMat);
 
@@ -430,6 +548,8 @@ int main()
     {
         glfwPollEvents();
 
+        UpdateOrbitCamera();
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         setViewPositionForProgram(phongShader, viewPos);
@@ -452,29 +572,51 @@ int main()
 
         // Models
         // get uniform location once per frame (cheaper)
-        glUseProgram(blinnShader);
-        GLint blinnColLoc = glGetUniformLocation(blinnShader, "baseColour");
+        //glUseProgram(blinnShader);
+        //GLint blinnColLoc = glGetUniformLocation(blinnShader, "baseColour");
+
+        // OLD SHADERS TO USE FOR WORLD
+        //for (int i = 0; i < (int)meshList.size(); i++)
+        //{
+        //    glUseProgram(blinnShader);
+        //    
+        //    bool isMug = std::find(mugIndices.begin(), mugIndices.end(), i) != mugIndices.end();
+
+        //    if (blinnColLoc >= 0)
+        //    {
+        //        if (isMug)
+        //            glUniform3f(blinnColLoc, 0.08f, 0.12f, 0.35f); // dark blue
+        //        else
+        //            glUniform3f(blinnColLoc, 0.08f, 0.12f, 0.35f);    // default (teapot)
+        //    }
+
+        //    meshList[i]->draw(matModelRoot * meshMatList[i], matView, matProj);
+        //
+
+        //    std::shared_ptr<Mesh> pMesh = meshList[i];
+        //    
+        //}
+
+        // Models (use texblinn shader colour uniform)
+        glUseProgram(texblinnShader);
+        GLint texColLoc = glGetUniformLocation(texblinnShader, "baseColour");
 
         for (int i = 0; i < (int)meshList.size(); i++)
         {
-            glUseProgram(blinnShader);
-            
             bool isMug = std::find(mugIndices.begin(), mugIndices.end(), i) != mugIndices.end();
 
-            if (blinnColLoc >= 0)
+            
+            if (texColLoc >= 0)
             {
                 if (isMug)
-                    glUniform3f(blinnColLoc, 0.08f, 0.12f, 0.35f); // dark blue
+                    glUniform3f(texColLoc, 0.08f, 0.12f, 0.35f);  // mug tint
                 else
-                    glUniform3f(blinnColLoc, 0.08f, 0.12f, 0.35f);    // default (teapot)
+                    glUniform3f(texColLoc, 1.0f, 1.0f, 1.0f);     // default white (no tint)
             }
 
             meshList[i]->draw(matModelRoot * meshMatList[i], matView, matProj);
-        
-
-            std::shared_ptr<Mesh> pMesh = meshList[i];
-            pMesh->draw(matModelRoot * meshMatList[i], matView, matProj);
         }
+
 
         glfwSwapBuffers(window);
     }
@@ -598,75 +740,115 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
             }
         }
 
-        // translation along camera axis (first person view)
-        if (GLFW_KEY_A == key) {
-            //  move left along -X
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(transStep, 0.0f, 0.0f));
-            nextMatView = mat * matView;
-        } else if (GLFW_KEY_D == key) {
-            // move right along X
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(-transStep, 0.0f, 0.0f));
-            nextMatView = mat * matView;
-        } else if (GLFW_KEY_W == key) {
-            // move forward along -Z
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, transStep));
-            nextMatView = mat * matView;
-        } else if (GLFW_KEY_S == key) {
-            // move backward along Z
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -transStep)); 
-            nextMatView = mat * matView;
+        // --- WASD moves the orbit target (camera follows), with collision ---
+        if (key == GLFW_KEY_W || key == GLFW_KEY_A || key == GLFW_KEY_S || key == GLFW_KEY_D)
+        {
+            // Build current camera first (so our directions match what you see)
+            UpdateOrbitCamera();
+
+            // Camera basis from current view
+            glm::vec3 forward = glm::normalize(gCamTarget - viewPos);         // towards target
+            glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
+
+            // Flatten to XZ so W/S doesn't fly up/down
+            forward.y = 0.0f;
+            if (glm::length(forward) > 0.0001f) forward = glm::normalize(forward);
+
+            glm::vec3 move(0.0f);
+            if (key == GLFW_KEY_W) move += forward * transStep;
+            if (key == GLFW_KEY_S) move -= forward * transStep;
+            if (key == GLFW_KEY_D) move += right * transStep;
+            if (key == GLFW_KEY_A) move -= right * transStep;
+
+            // Propose a new target position
+            glm::vec3 proposedTarget = gCamTarget + move;
+
+            // Build the *proposed* camera position from that target
+            glm::vec3 proposedCamPos;
+            glm::mat4 proposedView;
+            BuildOrbitCamera(proposedTarget, gCamDistance, gCamYaw, gCamPitch, proposedCamPos, proposedView);
+
+            // Collision test uses the proposed camera position
+            AABB mybox{ proposedCamPos - glm::vec3(0.2f), proposedCamPos + glm::vec3(0.2f) };
+
+            bool bCollide = false;
+            for (const std::shared_ptr<Mesh>& pMesh : meshList)
+            {
+                if (!pMesh || !pMesh->pSpatial) continue;
+
+                std::vector<int> out;
+                pMesh->pSpatial->QueryAABB(mybox, out);
+                if (!out.empty())
+                {
+                    bCollide = true;
+                    break;
+                }
+            }
+
+            // Only commit move if no collision
+            if (!bCollide)
+            {
+                gCamTarget = proposedTarget;
+                
+                UpdateOrbitCamera();
+            }
+
+            return; 
         }
+
 
 
         // translation along world axis
-        if (GLFW_KEY_LEFT == key) {
-            //  move left along -X
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(transStep, 0.0f, 0.0f));
-            nextMatView = matView * mat;
-            nextViewPos.x -= transStep;
-        } else if (GLFW_KEY_RIGHT == key) {
-            // move right along X
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(-transStep, 0.0f, 0.0f));
-            nextMatView = matView * mat;
-            nextViewPos.x += transStep;
-        } else if (GLFW_KEY_UP == key) {
-            // move up along Y
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -transStep, 0.0f));
-            nextMatView = matView * mat;
-            nextViewPos.y += transStep;
-        } else if (GLFW_KEY_DOWN == key) {
-            // move down along -Y
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, transStep, 0.0f));
-            nextMatView = matView * mat;
-            nextViewPos.y -= transStep;
-        } else  if ((GLFW_KEY_KP_SUBTRACT == key) || (GLFW_KEY_MINUS == key))  {
-            // move backward along +Z
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -transStep));
-            nextMatView = matView * mat;
-            nextViewPos.z += transStep;
-        } else if ((GLFW_KEY_KP_ADD == key) ||
-            (GLFW_KEY_EQUAL == key) && (mods & GLFW_MOD_SHIFT))  {
-            // move forward along -Z
-            mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, transStep));
-            nextMatView = matView * mat;
-            nextViewPos.z -= transStep;
-        }
+        //if (GLFW_KEY_LEFT == key) {
+        //    //  move left along -X
+        //    mat = glm::translate(glm::mat4(1.0f), glm::vec3(transStep, 0.0f, 0.0f));
+        //    nextMatView = matView * mat;
+        //    nextViewPos.x -= transStep;
+        //} else if (GLFW_KEY_RIGHT == key) {
+        //    // move right along X
+        //    mat = glm::translate(glm::mat4(1.0f), glm::vec3(-transStep, 0.0f, 0.0f));
+        //    nextMatView = matView * mat;
+        //    nextViewPos.x += transStep;
+        //} else if (GLFW_KEY_UP == key) {
+        //    // move up along Y
+        //    mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -transStep, 0.0f));
+        //    nextMatView = matView * mat;
+        //    nextViewPos.y += transStep;
+        //} else if (GLFW_KEY_DOWN == key) {
+        //    // move down along -Y
+        //    mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, transStep, 0.0f));
+        //    nextMatView = matView * mat;
+        //    nextViewPos.y -= transStep;
+        //} else  if ((GLFW_KEY_KP_SUBTRACT == key) || (GLFW_KEY_MINUS == key))  {
+        //    // move backward along +Z
+        //    mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -transStep));
+        //    nextMatView = matView * mat;
+        //    nextViewPos.z += transStep;
+        //} else if ((GLFW_KEY_KP_ADD == key) ||
+        //    (GLFW_KEY_EQUAL == key) && (mods & GLFW_MOD_SHIFT))  {
+        //    // move forward along -Z
+        //    mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, transStep));
+        //    nextMatView = matView * mat;
+        //    nextViewPos.z -= transStep;
+        //}
 
 
         // check collision detection
-        AABB mybox{ nextViewPos - 0.2f, nextViewPos + 0.2f };
-        std::vector<int> out;
+        AABB mybox{ nextViewPos - glm::vec3(0.2f), nextViewPos + glm::vec3(0.2f) };
 
         bool bCollide = false;
-        for (std::shared_ptr<Mesh> pMesh : meshList)
+
+        for (const std::shared_ptr<Mesh>& pMesh : meshList)
         {
+            if (!pMesh || !pMesh->pSpatial) continue;
+
+            std::vector<int> out;
             pMesh->pSpatial->QueryAABB(mybox, out);
-            
-            if (out.empty()) {
-                std::cout << "No collision" << std::endl;
-            } else {
+
+            if (!out.empty())
+            {
                 bCollide = true;
-                std::cout << "Collision detected: " << out.size() << std::endl;
+                break; // stop as soon as we hit something
             }
         }
 

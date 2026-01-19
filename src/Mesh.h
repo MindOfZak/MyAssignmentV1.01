@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <vector>
+#include <memory> // needed for std::unique_ptr
 
 #include <glad/glad.h>
 
@@ -10,23 +11,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/transform.hpp>
-
-// added in LabA07
-// ==============================================
 #include <assimp/material.h>
-
-// added in LabA11
 #include "Spatial.h"
 
 
-
-// added in LabA07
 struct Texture {
     GLuint id;
     std::string type;
 };
 
-// added in LabA07
+
 struct Material {
     glm::vec3 Diffuse;
     glm::vec3 Specular;
@@ -40,34 +34,46 @@ struct Material {
 class Mesh {
 
 protected:
-    // changed in LabA07
     // array of vertices and normals
-    //std::vector< glm::vec3 > vertices; 
+     
     std::vector<Vertex> vertices;
 
     // triangle vertex indices
     std::vector< unsigned int > indices;
 
-    // added in LabA07
+	// textures (only keeping for compatibility with model loading, but will not rely on textures[0])
     std::vector<Texture> textures;
 
     // Material material;
-    
     std::vector<GLuint> buffers;
 
-    // this will be Material in the future
+    // my shader program ID
     GLuint shaderId;
 
-    // added in LabA 11
+    // picking highlight boolean
     bool bPicked = false;
     
     void initBuffer();
 
-    // added in LabA07
+    // texture helpers
     std::vector<Texture> loadMaterialTextures(aiMaterial *mat, aiTextureType type, std::string typeName, std::string dir);
     unsigned int loadTextureAndBind(const char* path, const std::string& directory);
     
-    Material Mesh::loadMaterial(aiMaterial* mat);
+    struct SubMesh
+    {
+        unsigned int indexOffset = 0;   // start in indices[]
+        unsigned int indexCount = 0;   // how many indices for this part
+        int materialIndex = -1;  // Assimp material index for this part
+    };
+
+    // List of parts to draw separately (one per Assimp mesh)
+    std::vector<SubMesh> subMeshes;
+
+    // materialIndex -> diffuse texture ID (0 if none)
+    std::vector<unsigned int> materialDiffuseTex;
+
+    // NOT USED
+    //Material loadMaterial(aiMaterial* mat);
 
 public:
 

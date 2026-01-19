@@ -35,6 +35,10 @@ void Mesh::initFromData(const std::vector<Vertex>& verts,
     shaderId = id;
     vertices = verts;
     indices = idx;
+    subMeshes.clear();
+    materialDiffuseTex.clear();
+    textures.clear();
+
     initBuffer();
 }
 void Mesh::initSpatial(bool useOctree, glm::mat4 mat)
@@ -48,6 +52,12 @@ void Mesh::initSpatial(bool useOctree, glm::mat4 mat)
 }
 void Mesh::loadModel(std::string path)
 {
+    vertices.clear();
+    indices.clear();
+    textures.clear();
+    subMeshes.clear();
+    materialDiffuseTex.clear();
+    
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
         path,
@@ -63,13 +73,27 @@ void Mesh::loadModel(std::string path)
     }
     std::cout << "load model successful" << std::endl;
 
+    // Build directory for textures
+    std::string dir = "";
+    size_t last_slash_idx = path.find_last_of("/\\");
+    if (last_slash_idx != std::string::npos)
+        dir = path.substr(0, last_slash_idx);
+    
+    
     Vertex v;
-    // ---- Load geometry from ALL sub-meshes safely ----
+    // ---- Load geometry from ALL Assimp meshes and record the index ranges (subMesh)
     for (unsigned int i = 0; i < scene->mNumMeshes; i++)
     {
         aiMesh* mesh = scene->mMeshes[i];
         if (!mesh) continue;
+        
         unsigned int baseVertex = (unsigned int)vertices.size();
+
+        // record where this mesh's indices start + its material
+        SubMesh part;
+        part.indexOffset = (unsigned int)indices.size();
+        part.materialIndex = (int)mesh->mMaterialIndex;
+
         // vertices
         for (unsigned int j = 0; j < mesh->mNumVertices; j++)
         {
@@ -114,36 +138,72 @@ void Mesh::loadModel(std::string path)
             indices.push_back(baseVertex + face.mIndices[1]);
             indices.push_back(baseVertex + face.mIndices[2]);
         }
+        // finish the part index count and store it
+        part.indexCount = (unsigned int)indices.size() - part.indexOffset;
+        subMeshes.push_back(part);
     }
+    
+    
+	// OLD CODE : only load diffuse texture from the first material that has one
     // Load diffuse texture from the first material that has one
-    std::string dir = "";
+    /*std::string dir = "";
     size_t last_slash_idx = path.find_last_of("/\\");
     if (last_slash_idx != std::string::npos)
-        dir = path.substr(0, last_slash_idx);
+        dir = path.substr(0, last_slash_idx);*/
 
-    for (unsigned int mi = 0; mi < scene->mNumMeshes; mi++)
+    // Load ONE diffuse texture per material (materialIndex -> textureID)
+    // OLD CODE
+    //for (unsigned int m = 0; m < scene->mNumMeshes; m++)
+    //{
+    //    aiMesh* m = scene->mMeshes[mi];
+    //    if (!m) continue;
+
+    //    if (m->mMaterialIndex >= scene->mNumMaterials) continue;
+
+    //    aiMaterial* material = scene->mMaterials[m->mMaterialIndex];
+    //    if (!material) continue;
+
+    //    if (material->GetTextureCount(aiTextureType_DIFFUSE) > 0)
+    //    {
+    //        std::vector<Texture> diffuseMaps =
+    //            loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", dir);
+
+    //        textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
+    //        break;
+    //    }
+    //}
+    materialDiffuseTex.assign(scene->mNumMaterials, 0);
+    for (unsigned int m = 0; m < scene->mNumMaterials; m++)
     {
-        aiMesh* m = scene->mMeshes[mi];
-        if (!m) continue;
+        aiMaterial* mat = scene->mMaterials[m];
+        if (!mat) continue;
 
-        if (m->mMaterialIndex >= scene->mNumMaterials) continue;
-
-        aiMaterial* material = scene->mMaterials[m->mMaterialIndex];
-        if (!material) continue;
-
-        if (material->GetTextureCount(aiTextureType_DIFFUSE) > 0)
+        // If this material has a diffuse texture, load the FIRST one (index 0)
+        if (mat->GetTextureCount(aiTextureType_DIFFUSE) > 0)
         {
-            std::vector<Texture> diffuseMaps =
-                loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", dir);
+            aiString str;
+            mat->GetTexture(aiTextureType_DIFFUSE, 0, &str);
 
-            textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
-            break;
+            unsigned int texId = loadTextureAndBind(str.C_Str(), dir);
+            materialDiffuseTex[m] = texId;
+
+            // >>> CHANGED/ADDED <<<
+            // optional: keep a record in textures[] (useful for debugging/logging)
+            if (texId != 0)
+            {
+                Texture t;
+                t.id = texId;
+                t.type = "texture_diffuse";
+                textures.push_back(t);
+            }
         }
     }
 
     std::cout << "numVertex: " << vertices.size() << std::endl;
     std::cout << "numIndex: " << indices.size() << std::endl;
-    std::cout << "numTextures: " << textures.size() << std::endl;
+    std::cout << "numSubMeshes: " << subMeshes.size() << std::endl; 
+    std::cout << "numMaterials: " << materialDiffuseTex.size() << std::endl; 
+    std::cout << "numTextures (debug list): " << textures.size() << std::endl;
 }
 void Mesh::initBuffer()
 {
@@ -238,64 +298,103 @@ unsigned int Mesh::loadTextureAndBind(const char* path, const std::string& direc
 
     return textureID;
 }
-Material Mesh::loadMaterial(aiMaterial* mat) 
-{
-    Material material;
-    aiColor3D color(0.f, 0.f, 0.f);
-    float shininess;
-
-    mat->Get(AI_MATKEY_COLOR_DIFFUSE, color);
-    material.Diffuse = glm::vec3(color.r, color.b, color.g);
-
-    mat->Get(AI_MATKEY_COLOR_AMBIENT, color);
-    material.Ambient = glm::vec3(color.r, color.b, color.g);
-
-    mat->Get(AI_MATKEY_COLOR_SPECULAR, color);
-    material.Specular = glm::vec3(color.r, color.b, color.g);
-
-    mat->Get(AI_MATKEY_SHININESS, shininess);
-    material.Shininess = shininess;
-
-    return material;
-}
+//Material Mesh::loadMaterial(aiMaterial* mat) 
+//{
+//    Material material;
+//    aiColor3D color(0.f, 0.f, 0.f);
+//    float shininess;
+//
+//    mat->Get(AI_MATKEY_COLOR_DIFFUSE, color);
+//    material.Diffuse = glm::vec3(color.r, color.b, color.g);
+//
+//    mat->Get(AI_MATKEY_COLOR_AMBIENT, color);
+//    material.Ambient = glm::vec3(color.r, color.b, color.g);
+//
+//    mat->Get(AI_MATKEY_COLOR_SPECULAR, color);
+//    material.Specular = glm::vec3(color.r, color.b, color.g);
+//
+//    mat->Get(AI_MATKEY_SHININESS, shininess);
+//    material.Shininess = shininess;
+//
+//    return material;
+//}
 void Mesh::draw(glm::mat4 matModel, glm::mat4 matView, glm::mat4 matProj)
 {
     // 1. Bind the correct shader program
     glUseProgram(shaderId);    
 
-    // 2. Set the appropriate uniforms for each shader
-    // set the modelling transform  
+    // model  
     GLuint model_loc = glGetUniformLocation(shaderId, "model" );
     glUniformMatrix4fv(model_loc, 1, GL_FALSE, &matModel[0][0]);
-    // set view matrix
+   
+    // view
     GLuint view_loc = glGetUniformLocation(shaderId, "view" );
     glUniformMatrix4fv(view_loc, 1, GL_FALSE, &matView[0][0]);
-    // set projection transforms
+    
+    // projection
     glm::mat4 mat_projection = matProj;
     GLuint projection_loc = glGetUniformLocation( shaderId, "projection" );
     glUniformMatrix4fv(projection_loc, 1, GL_FALSE, &mat_projection[0][0]);
+    
     // Texture mapping (unit 0)
     GLint loc = glGetUniformLocation(shaderId, "diffuseMap");
     if (loc >= 0) glUniform1i(loc, 0);
     loc = glGetUniformLocation(shaderId, "textureMap");
     if (loc >= 0) glUniform1i(loc, 0);
-    // Bind the mesh's first diffuse texture (if present)
-    glActiveTexture(GL_TEXTURE0);
+    
+    // picked flag
+    glUniform1i(glGetUniformLocation(shaderId, "bPicked"), bPicked);
 
-    if (!textures.empty() && textures[0].id != 0)
+    // bind VAO
+    glBindVertexArray(buffers[0]);
+
+	// OLD CODE: draw entire mesh in one call
+    //glActiveTexture(GL_TEXTURE0);
+
+    //if (!textures.empty() && textures[0].id != 0)
+    //{
+    //    glBindTexture(GL_TEXTURE_2D, textures[0].id);
+    //}
+    //else
+    //{
+    //    glBindTexture(GL_TEXTURE_2D, 0);
+    //}
+    //// Spatial Data Structures
+    //glUniform1i(glGetUniformLocation(shaderId, "bPicked"), bPicked);
+    //// 3. Bind the corresponding model's VAO
+    //glBindVertexArray(buffers[0]);
+    //// 4. Draw the model
+    //glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+    //// 5. Unset vertex buffer
+    //glBindVertexArray(0);
+
+    if (!subMeshes.empty())
     {
-        glBindTexture(GL_TEXTURE_2D, textures[0].id);
+        for (const SubMesh& part : subMeshes)
+        {
+            glActiveTexture(GL_TEXTURE0);
+
+            unsigned int texId = 0;
+            if (part.materialIndex >= 0 && part.materialIndex < (int)materialDiffuseTex.size())
+                texId = materialDiffuseTex[part.materialIndex];
+
+            glBindTexture(GL_TEXTURE_2D, texId);
+
+            glDrawElements(
+                GL_TRIANGLES,
+                part.indexCount,
+                GL_UNSIGNED_INT,
+                (void*)(part.indexOffset * sizeof(unsigned int))
+            );
+        }
     }
     else
     {
+        // Fallback: procedural meshes etc.
+        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, 0);
+        glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
     }
-    // Spatial Data Structures
-    glUniform1i(glGetUniformLocation(shaderId, "bPicked"), bPicked);
-    // 3. Bind the corresponding model's VAO
-    glBindVertexArray(buffers[0]);
-    // 4. Draw the model
-    glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
-    // 5. Unset vertex buffer
+
     glBindVertexArray(0);
 }
