@@ -216,6 +216,7 @@ void mouse_button_callback(GLFWwindow *win, int button, int action, int mods)
                     bestT = hit.t;
                     bestMesh = pMesh;
                     gPickedIndex = i;
+                    std::cout << "Picked index: " << gPickedIndex << std::endl;
                 }
             }
         }
@@ -404,7 +405,7 @@ int main()
     for (int i = 0; i < 4; i++)
     {
         std::shared_ptr<Mesh> mug = std::make_shared<Mesh>();
-        mug->init("models/Winter_Mug_Low_Poly.obj", texblinnShader);
+        mug->init("models/Winter_Mug_Low_Poly.obj", phongShader);
         meshList.push_back(mug);
 
         mugIndices.push_back((int)meshList.size() - 1);
